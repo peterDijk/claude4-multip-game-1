@@ -171,6 +171,271 @@
       let particles = [];
 
       // ... (include all the existing game variables and functions) ...
+      // Add these missing game variables and initialization:
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const minimapCanvas = document.getElementById("minimap");
+      const minimapCtx = minimapCanvas.getContext("2d");
+
+      // Game objects
+      let player = {
+        worldX: 0,
+        worldY: 0,
+        speed: 5,
+        carrying: null,
+      };
+
+      let materials = [];
+      let keys = {};
+
+      // Material types
+      const materialTypes = [
+        { name: "Iron", color: "#8B7355", points: 10 },
+        { name: "Gold", color: "#FFD700", points: 25 },
+        { name: "Diamond", color: "#B9F2FF", points: 50 },
+        { name: "Emerald", color: "#50C878", points: 35 },
+      ];
+
+      // Center platform
+      const centerPlatform = {
+        size: 80,
+      };
+
+      // UI elements
+      const scoreElement = document.getElementById("score");
+      const carryingElement = document.getElementById("carrying");
+      const comboElement = document.getElementById("combo");
+
+      // Input handling
+      document.addEventListener("keydown", (e) => {
+        keys[e.code] = true;
+      });
+
+      document.addEventListener("keyup", (e) => {
+        keys[e.code] = false;
+      });
+
+      // Utility functions
+      function worldToScreen(worldX, worldY, height = 0) {
+        const screenX = canvas.width / 2 + (worldX - player.worldX);
+        const screenY = canvas.height / 2 + (worldY - player.worldY) - height;
+        return { x: screenX, y: screenY };
+      }
+
+      function createParticle(worldX, worldY, color, text = null) {
+        particles.push({
+          worldX,
+          worldY,
+          color,
+          text,
+          life: 60,
+          maxLife: 60,
+          vx: (Math.random() - 0.5) * 4,
+          vy: (Math.random() - 0.5) * 4 - 2,
+        });
+      }
+
+      function showComboBonus(bonus) {
+        createParticle(0, 0, "#FF6B6B", `COMBO +${bonus}!`);
+      }
+
+      // Drawing functions
+      function drawBackground() {
+        const gridSize = 100;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+        ctx.lineWidth = 1;
+
+        const startX = -player.worldX % gridSize;
+        const startY = -player.worldY % gridSize;
+
+        for (let x = startX; x < canvas.width; x += gridSize) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+        }
+
+        for (let y = startY; y < canvas.height; y += gridSize) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(canvas.width, y);
+          ctx.stroke();
+        }
+      }
+
+      function drawCenterPlatform() {
+        const pos = worldToScreen(0, 0);
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, centerPlatform.size, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.fillStyle = "white";
+        ctx.font = "bold 20px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("DELIVERY", pos.x, pos.y);
+      }
+
+      function drawPlayer() {
+        const time = Date.now() * 0.008;
+        const floatHeight = Math.sin(time) * 5 + 15;
+
+        const pos = worldToScreen(player.worldX, player.worldY, floatHeight);
+        const shadowPos = worldToScreen(player.worldX, player.worldY, 0);
+
+        // Shadow
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.beginPath();
+        ctx.ellipse(shadowPos.x, shadowPos.y, 20, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Player
+        ctx.fillStyle = "#FF6B6B";
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 20, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Carried item
+        if (player.carrying) {
+          const carriedPos = worldToScreen(
+            player.worldX - 30,
+            player.worldY - 30,
+            floatHeight + 10
+          );
+
+          ctx.fillStyle = player.carrying.type.color;
+          ctx.beginPath();
+          ctx.arc(carriedPos.x, carriedPos.y, 15, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      function drawMaterials() {
+        materials.forEach((material) => {
+          const time = Date.now() * 0.005 + material.id;
+          const floatHeight = Math.sin(time) * 8 + 12;
+
+          const pos = worldToScreen(
+            material.worldX,
+            material.worldY,
+            floatHeight
+          );
+          const shadowPos = worldToScreen(material.worldX, material.worldY, 0);
+
+          if (
+            pos.x > -50 &&
+            pos.x < canvas.width + 50 &&
+            pos.y > -50 &&
+            pos.y < canvas.height + 50
+          ) {
+            // Shadow
+            ctx.fillStyle = "rgba(0,0,0,0.3)";
+            ctx.beginPath();
+            ctx.ellipse(shadowPos.x, shadowPos.y, 15, 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Material
+            ctx.fillStyle = material.type.color;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 18, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Glow effect
+            const gradient = ctx.createRadialGradient(
+              pos.x,
+              pos.y,
+              0,
+              pos.x,
+              pos.y,
+              30
+            );
+            gradient.addColorStop(0, material.type.color + "40");
+            gradient.addColorStop(1, "transparent");
+            ctx.fillStyle = gradient;
+            ctx.fill();
+          }
+        });
+      }
+
+      function drawParticles() {
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const particle = particles[i];
+          const pos = worldToScreen(particle.worldX, particle.worldY);
+
+          const alpha = particle.life / particle.maxLife;
+          ctx.fillStyle =
+            particle.color +
+            Math.floor(alpha * 255)
+              .toString(16)
+              .padStart(2, "0");
+
+          if (particle.text) {
+            ctx.font = "bold 16px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(particle.text, pos.x, pos.y);
+          } else {
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          particle.worldX += particle.vx;
+          particle.worldY += particle.vy;
+          particle.life--;
+
+          if (particle.life <= 0) {
+            particles.splice(i, 1);
+          }
+        }
+      }
+
+      function drawMinimap() {
+        minimapCtx.fillStyle = "rgba(0,0,0,0.7)";
+        minimapCtx.fillRect(0, 0, 150, 150);
+
+        // Center platform
+        minimapCtx.fillStyle = "white";
+        minimapCtx.beginPath();
+        minimapCtx.arc(75, 75, 10, 0, Math.PI * 2);
+        minimapCtx.fill();
+
+        // Player
+        minimapCtx.fillStyle = "#FF6B6B";
+        minimapCtx.beginPath();
+        minimapCtx.arc(75, 75, 3, 0, Math.PI * 2);
+        minimapCtx.fill();
+
+        // Materials
+        materials.forEach((material) => {
+          const x = 75 + (material.worldX - player.worldX) * 0.02;
+          const y = 75 + (material.worldY - player.worldY) * 0.02;
+
+          if (x > 0 && x < 150 && y > 0 && y < 150) {
+            minimapCtx.fillStyle = material.type.color;
+            minimapCtx.beginPath();
+            minimapCtx.arc(x, y, 2, 0, Math.PI * 2);
+            minimapCtx.fill();
+          }
+        });
+
+        // Other players
+        otherPlayers.forEach((otherPlayer) => {
+          const x = 75 + (otherPlayer.worldX - player.worldX) * 0.02;
+          const y = 75 + (otherPlayer.worldY - player.worldY) * 0.02;
+
+          if (x > 0 && x < 150 && y > 0 && y < 150) {
+            minimapCtx.fillStyle = "#4ECDC4";
+            minimapCtx.beginPath();
+            minimapCtx.arc(x, y, 3, 0, Math.PI * 2);
+            minimapCtx.fill();
+          }
+        });
+      }
 
       // Multiplayer specific functions
       function joinGame() {
@@ -465,14 +730,26 @@
 
       let gameLoopStarted = false;
 
-      // Modified game loop
+      // Replace the existing game loop with this complete version:
       function gameLoop() {
         if (!gameStarted) return;
 
-        // ... (existing game loop code) ...
+        // Update
+        updatePlayer();
+        checkCollisions();
 
-        // Add drawing other players
+        // Clear canvas
+        ctx.fillStyle = "rgba(20, 30, 50, 1)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw everything
+        drawBackground();
+        drawCenterPlatform();
+        drawMaterials();
+        drawPlayer();
         drawOtherPlayers();
+        drawParticles();
+        drawMinimap();
 
         requestAnimationFrame(gameLoop);
       }
