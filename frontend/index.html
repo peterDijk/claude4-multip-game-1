@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Material Collector 3D - Multiplayer</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        font-family: Arial, sans-serif;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        margin: 0 auto;
+        border: 3px solid #fff;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+      }
+      .ui {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        color: white;
+        font-size: 24px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.3);
+        padding: 15px;
+        border-radius: 10px;
+      }
+      .join-ui {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.8);
+        padding: 30px;
+        border-radius: 15px;
+        color: white;
+        text-align: center;
+      }
+      .join-ui input {
+        padding: 10px;
+        margin: 10px;
+        border: none;
+        border-radius: 5px;
+        font-size: 16px;
+      }
+      .join-ui button {
+        padding: 10px 20px;
+        margin: 10px;
+        border: none;
+        border-radius: 5px;
+        background: #4ecdc4;
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+      }
+      .player-list {
+        position: absolute;
+        top: 20px;
+        right: 180px;
+        background: rgba(0, 0, 0, 0.3);
+        padding: 10px;
+        border-radius: 10px;
+        color: white;
+        font-size: 14px;
+      }
+      .chat {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        width: 300px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        color: white;
+        font-size: 14px;
+      }
+      .chat-messages {
+        height: 150px;
+        overflow-y: auto;
+        padding: 10px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+      }
+      .chat-input {
+        padding: 10px;
+        display: flex;
+      }
+      .chat-input input {
+        flex: 1;
+        padding: 5px;
+        border: none;
+        border-radius: 3px;
+        margin-right: 5px;
+      }
+      .chat-input button {
+        padding: 5px 10px;
+        border: none;
+        border-radius: 3px;
+        background: #4ecdc4;
+        color: white;
+        cursor: pointer;
+      }
+      /* ... rest of existing styles ... */
+    </style>
+  </head>
+  <body>
+    <div id="joinUI" class="join-ui">
+      <h2>Join Multiplayer Game</h2>
+      <input
+        type="text"
+        id="playerName"
+        placeholder="Your Name"
+        maxlength="20"
+      />
+      <input
+        type="text"
+        id="roomId"
+        placeholder="Room ID (optional)"
+        maxlength="20"
+      />
+      <br />
+      <button onclick="joinGame()">Join Game</button>
+    </div>
+
+    <div id="gameUI" style="display: none">
+      <div class="ui">
+        <div>Score: <span id="score">0</span></div>
+        <div>Carrying: <span id="carrying">None</span></div>
+        <div>Combo: <span id="combo">0</span>x</div>
+        <div>Room: <span id="currentRoom">-</span></div>
+      </div>
+
+      <div class="player-list">
+        <div><strong>Players Online:</strong></div>
+        <div id="playerList"></div>
+      </div>
+
+      <canvas class="minimap" id="minimap" width="150" height="150"></canvas>
+
+      <div class="chat">
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input">
+          <input
+            type="text"
+            id="chatInput"
+            placeholder="Type message..."
+            maxlength="100"
+          />
+          <button onclick="sendChat()">Send</button>
+        </div>
+      </div>
+
+      <canvas id="gameCanvas" width="800" height="600"></canvas>
+    </div>
+
+    <script>
+      // Socket connection
+      const socket = io("http://localhost:3001"); // Change to your server URL
+
+      // Game state
+      let gameStarted = false;
+      let currentRoom = "";
+      let playerName = "";
+      let otherPlayers = new Map();
+      let score = 0;
+      let combo = 0;
+      let lastDeliveryTime = 0;
+      let particles = [];
+
+      // ... (include all the existing game variables and functions) ...
+
+      // Multiplayer specific functions
+      function joinGame() {
+        const nameInput = document.getElementById("playerName");
+        const roomInput = document.getElementById("roomId");
+
+        playerName = nameInput.value.trim() || "Anonymous";
+        currentRoom = roomInput.value.trim() || "default";
+
+        const playerData = {
+          name: playerName,
+          worldX: player.worldX,
+          worldY: player.worldY,
+          score: score,
+          carrying: player.carrying,
+        };
+
+        socket.emit("joinRoom", { roomId: currentRoom, playerData });
+
+        document.getElementById("joinUI").style.display = "none";
+        document.getElementById("gameUI").style.display = "block";
+        document.getElementById("currentRoom").textContent = currentRoom;
+
+        gameStarted = true;
+        if (!gameLoopStarted) {
+          gameLoop();
+          gameLoopStarted = true;
+        }
+      }
+
+      function sendChat() {
+        const input = document.getElementById("chatInput");
+        const message = input.value.trim();
+        if (message) {
+          socket.emit("chatMessage", message);
+          input.value = "";
+        }
+      }
+
+      function updatePlayerList() {
+        const playerList = document.getElementById("playerList");
+        const players = Array.from(otherPlayers.values());
+        players.push({ name: playerName, score: score }); // Add current player
+
+        players.sort((a, b) => b.score - a.score); // Sort by score
+
+        playerList.innerHTML = players
+          .map((p) => `<div>${p.name}: ${p.score || 0}</div>`)
+          .join("");
+      }
+
+      function addChatMessage(playerName, message) {
+        const chatMessages = document.getElementById("chatMessages");
+        const messageDiv = document.createElement("div");
+        messageDiv.innerHTML = `<strong>${playerName}:</strong> ${message}`;
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      // Socket event listeners
+      socket.on("gameState", (gameState) => {
+        // Update materials
+        materials = gameState.materials;
+
+        // Update other players
+        otherPlayers.clear();
+        gameState.players.forEach((p) => {
+          if (p.id !== socket.id) {
+            otherPlayers.set(p.id, p);
+          }
+        });
+        updatePlayerList();
+      });
+
+      socket.on("playerJoined", (playerData) => {
+        otherPlayers.set(playerData.id, playerData);
+        updatePlayerList();
+        addChatMessage("System", `${playerData.name} joined the game`);
+      });
+
+      socket.on("playerLeft", (playerId) => {
+        const player = otherPlayers.get(playerId);
+        if (player) {
+          addChatMessage("System", `${player.name} left the game`);
+          otherPlayers.delete(playerId);
+          updatePlayerList();
+        }
+      });
+
+      socket.on("playerMoved", (playerData) => {
+        otherPlayers.set(playerData.id, playerData);
+      });
+
+      socket.on("materialCollected", (data) => {
+        // Remove material from local array
+        materials = materials.filter((m) => m.id !== data.materialId);
+
+        // Show collection effect for other players
+        if (data.playerId !== socket.id) {
+          const otherPlayer = otherPlayers.get(data.playerId);
+          if (otherPlayer) {
+            createParticle(otherPlayer.worldX, otherPlayer.worldY, "#FFD700");
+          }
+        }
+      });
+
+      socket.on("materialSpawned", (material) => {
+        materials.push(material);
+      });
+
+      socket.on("playerDelivered", (data) => {
+        const otherPlayer = otherPlayers.get(data.playerId);
+        if (otherPlayer) {
+          // Update other player's score
+          otherPlayer.score = (otherPlayer.score || 0) + data.points;
+          // Show delivery effect
+          createParticle(
+            0,
+            0,
+            "#FFD700",
+            `${otherPlayer.name} +${data.points}`
+          );
+          updatePlayerList();
+        }
+      });
+
+      socket.on("chatMessage", (data) => {
+        const sender =
+          data.playerId === socket.id
+            ? "You"
+            : otherPlayers.get(data.playerId)?.name || "Unknown";
+        addChatMessage(sender, data.message);
+      });
+
+      // Enhanced collision detection for multiplayer
+      function checkCollisions() {
+        if (!player.carrying) {
+          for (let i = materials.length - 1; i >= 0; i--) {
+            const material = materials[i];
+            const distance = Math.sqrt(
+              (player.worldX - material.worldX) ** 2 +
+                (player.worldY - material.worldY) ** 2
+            );
+
+            if (distance < 50) {
+              player.carrying = material;
+              materials.splice(i, 1);
+              carryingElement.textContent = `${material.type.name} (${material.type.points} pts)`;
+
+              // Notify server about material collection
+              socket.emit("collectMaterial", material.id);
+
+              createParticle(
+                material.worldX,
+                material.worldY,
+                material.type.color
+              );
+              break;
+            }
+          }
+        }
+
+        if (player.carrying) {
+          const distanceToCenter = Math.sqrt(
+            player.worldX ** 2 + player.worldY ** 2
+          );
+
+          if (distanceToCenter < centerPlatform.size) {
+            const currentTime = Date.now();
+            const basePoints = player.carrying.type.points;
+
+            if (currentTime - lastDeliveryTime < 3000) {
+              combo++;
+            } else {
+              combo = 1;
+            }
+
+            const comboBonus = Math.floor(basePoints * (combo - 1) * 0.5);
+            const totalPoints = basePoints + comboBonus;
+
+            score += totalPoints;
+            lastDeliveryTime = currentTime;
+
+            // Notify server about delivery
+            socket.emit("deliverMaterial", {
+              points: totalPoints,
+              combo: combo,
+            });
+
+            createParticle(0, 0, "#FFD700", `+${totalPoints}`);
+            if (comboBonus > 0) {
+              showComboBonus(comboBonus);
+              for (let i = 0; i < 5; i++) {
+                createParticle(0, 0, "#FFD700");
+              }
+            }
+
+            scoreElement.textContent = score;
+            comboElement.textContent = combo;
+            player.carrying = null;
+            carryingElement.textContent = "None";
+            updatePlayerList();
+          }
+        }
+      }
+
+      // Enhanced player update for multiplayer
+      function updatePlayer() {
+        const oldX = player.worldX;
+        const oldY = player.worldY;
+        const speed = player.speed;
+
+        if (keys["ArrowLeft"] || keys["KeyA"]) player.worldX -= speed;
+        if (keys["ArrowRight"] || keys["KeyD"]) player.worldX += speed;
+        if (keys["ArrowUp"] || keys["KeyW"]) player.worldY -= speed;
+        if (keys["ArrowDown"] || keys["KeyS"]) player.worldY += speed;
+
+        // Send position update if player moved
+        if (gameStarted && (oldX !== player.worldX || oldY !== player.worldY)) {
+          socket.emit("playerUpdate", {
+            name: playerName,
+            worldX: player.worldX,
+            worldY: player.worldY,
+            score: score,
+            carrying: player.carrying,
+          });
+        }
+      }
+
+      // Draw other players
+      function drawOtherPlayers() {
+        otherPlayers.forEach((otherPlayer) => {
+          const time = Date.now() * 0.008;
+          const floatHeight = Math.sin(time) * 5 + 15;
+
+          const pos = worldToScreen(
+            otherPlayer.worldX,
+            otherPlayer.worldY,
+            floatHeight
+          );
+          const shadowPos = worldToScreen(
+            otherPlayer.worldX,
+            otherPlayer.worldY,
+            0
+          );
+
+          // Shadow
+          ctx.fillStyle = "rgba(0,0,0,0.4)";
+          ctx.beginPath();
+          ctx.ellipse(shadowPos.x, shadowPos.y, 20, 10, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Other player body (different color)
+          ctx.fillStyle = "#4ECDC4";
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, 20, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Player name
+          ctx.fillStyle = "white";
+          ctx.font = "bold 14px Arial";
+          ctx.textAlign = "center";
+          ctx.strokeStyle = "black";
+          ctx.lineWidth = 2;
+          ctx.strokeText(otherPlayer.name, pos.x, pos.y - 35);
+          ctx.fillText(otherPlayer.name, pos.x, pos.y - 35);
+
+          // Draw carried item for other players
+          if (otherPlayer.carrying) {
+            const carriedPos = worldToScreen(
+              otherPlayer.worldX - 30,
+              otherPlayer.worldY - 30,
+              floatHeight + 10
+            );
+
+            ctx.fillStyle = otherPlayer.carrying.type.color;
+            ctx.beginPath();
+            ctx.arc(carriedPos.x, carriedPos.y, 15, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+      }
+
+      // Chat input handling
+      document.getElementById("chatInput").addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          sendChat();
+        }
+      });
+
+      // ... (include all other existing game functions) ...
+
+      let gameLoopStarted = false;
+
+      // Modified game loop
+      function gameLoop() {
+        if (!gameStarted) return;
+
+        // ... (existing game loop code) ...
+
+        // Add drawing other players
+        drawOtherPlayers();
+
+        requestAnimationFrame(gameLoop);
+      }
+    </script>
+  </body>
+</html>
